@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSV Analyzer — Data Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #1a1a24;
+    --border: #2a2a3a;
+    --accent: #6366f1;
+    --accent2: #f59e0b;
+    --accent3: #10b981;
+    --danger: #ef4444;
+    --text: #e8e8f0;
+    --muted: #6b6b85;
+    --mono: 'DM Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* NOISE OVERLAY */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: 0.4;
+  }
+
+  /* HEADER */
+  header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(10,10,15,0.85);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+    height: 60px;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 1.1rem; font-weight: 800; letter-spacing: -0.03em;
+  }
+  .logo-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.6;transform:scale(0.8)} }
+  
+  .header-stats {
+    display: flex; gap: 1.5rem; align-items: center;
+    font-family: var(--mono); font-size: 0.75rem; color: var(--muted);
+  }
+  .stat-pill {
+    background: var(--surface2); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 100px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .stat-pill span { color: var(--text); font-weight: 500; }
+
+  /* LAYOUT */
+  .app { position: relative; z-index: 1; }
+
+  /* UPLOAD ZONE */
+  .upload-section {
+    padding: 2rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 3rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+  .upload-zone::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 100%, rgba(99,102,241,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(99,102,241,0.05);
+  }
+  .upload-icon { font-size: 2.5rem; margin-bottom: 1rem; filter: grayscale(0.3); }
+  .upload-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .upload-sub { color: var(--muted); font-size: 0.85rem; font-family: var(--mono); }
+  #fileInput { display: none; }
+  
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 16px; border-radius: 8px; border: none;
+    font-family: var(--sans); font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #7c7ff5; transform: translateY(-1px); }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn-danger:hover { background: rgba(239,68,68,0.1); }
+
+  /* FILE CHIPS */
+  .file-chips {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 1rem;
+  }
+  .file-chip {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface2); border: 1px solid var(--border);
+    padding: 6px 12px; border-radius: 8px;
+    font-family: var(--mono); font-size: 0.75rem;
+    animation: fadeIn 0.3s ease;
+  }
+  .file-chip .chip-name { color: var(--text); font-weight: 500; }
+  .file-chip .chip-rows { color: var(--muted); }
+  .file-chip .chip-remove {
+    background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 0; font-size: 1rem; line-height: 1;
+    transition: color 0.2s;
+  }
+  .file-chip .chip-remove:hover { color: var(--danger); }
+  .chip-color { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+  @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+
+  /* MAIN CONTENT */
+  .main {
+    display: grid; grid-template-columns: 280px 1fr;
+    min-height: calc(100vh - 60px);
+  }
+
+  /* SIDEBAR FILTERS */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 1.5rem;
+    overflow-y: auto;
+    height: calc(100vh - 60px);
+    position: sticky; top: 60px;
+    background: var(--surface);
+  }
+  .sidebar-title {
+    font-size: 0.65rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted);
+    margin-bottom: 1rem;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .filter-group { margin-bottom: 1.5rem; }
+  .filter-label {
+    font-size: 0.75rem; font-weight: 600; color: var(--muted);
+    margin-bottom: 0.5rem; font-family: var(--mono);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .filter-label::before {
+    content: ''; display: block;
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--accent);
+  }
+  
+  .filter-search {
+    width: 100%;
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 12px; border-radius: 8px;
+    font-family: var(--mono); font-size: 0.8rem;
+    outline: none; transition: border-color 0.2s;
+  }
+  .filter-search:focus { border-color: var(--accent); }
+  .filter-search::placeholder { color: var(--muted); }
+  
+  .filter-options {
+    display: flex; flex-direction: column; gap: 2px;
+    max-height: 180px; overflow-y: auto;
+  }
+  .filter-option {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 8px; border-radius: 6px; cursor: pointer;
+    transition: background 0.15s;
+    font-size: 0.78rem;
+  }
+  .filter-option:hover { background: var(--surface2); }
+  .filter-option input { accent-color: var(--accent); cursor: pointer; }
+  .filter-option .opt-label { flex: 1; color: var(--text); }
+  .filter-option .opt-count {
+    font-family: var(--mono); font-size: 0.68rem;
+    color: var(--muted); background: var(--bg);
+    padding: 1px 6px; border-radius: 100px;
+  }
+  
+  .clear-filters {
+    width: 100%; margin-top: 1rem;
+  }
+
+  /* TABLE AREA */
+  .content { padding: 1.5rem; overflow: hidden; }
+  
+  .content-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap;
+  }
+  .content-title {
+    font-size: 0.65rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .result-count {
+    font-family: var(--mono); font-size: 0.8rem; color: var(--accent);
+  }
+  
+  .search-bar {
+    flex: 1; min-width: 200px; max-width: 400px;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 8px 12px; border-radius: 8px;
+    transition: border-color 0.2s;
+  }
+  .search-bar:focus-within { border-color: var(--accent); }
+  .search-bar input {
+    background: none; border: none; outline: none;
+    color: var(--text); font-family: var(--mono); font-size: 0.8rem;
+    flex: 1;
+  }
+  .search-bar input::placeholder { color: var(--muted); }
+  .search-icon { color: var(--muted); font-size: 0.9rem; }
+
+  /* COLUMN TOGGLE */
+  .col-toggle-wrap { position: relative; }
+  .col-toggle-menu {
+    position: absolute; right: 0; top: calc(100% + 8px);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 0.5rem;
+    min-width: 220px; z-index: 50;
+    display: none;
+  }
+  .col-toggle-menu.open { display: block; }
+  .col-toggle-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-radius: 6px; cursor: pointer;
+    font-size: 0.78rem; transition: background 0.15s;
+  }
+  .col-toggle-item:hover { background: var(--border); }
+  .col-toggle-item input { accent-color: var(--accent); cursor: pointer; }
+
+  /* TABLE */
+  .table-wrap {
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    max-height: calc(100vh - 220px);
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--surface2);
+  }
+  th {
+    padding: 10px 14px;
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted);
+    text-align: left; white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+    transition: color 0.2s;
+  }
+  th:hover { color: var(--text); }
+  th.sorted { color: var(--accent); }
+  th .sort-icon { margin-left: 4px; opacity: 0.5; }
+  th.sorted .sort-icon { opacity: 1; }
+  
+  td {
+    padding: 9px 14px;
+    font-family: var(--mono); font-size: 0.75rem;
+    color: var(--text); white-space: nowrap;
+    border-bottom: 1px solid rgba(42,42,58,0.5);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(99,102,241,0.05); }
+  
+  /* BADGES */
+  .badge {
+    display: inline-flex; align-items: center;
+    padding: 2px 8px; border-radius: 100px;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.02em;
+  }
+  .badge-green { background: rgba(16,185,129,0.15); color: var(--accent3); border: 1px solid rgba(16,185,129,0.3); }
+  .badge-yellow { background: rgba(245,158,11,0.15); color: var(--accent2); border: 1px solid rgba(245,158,11,0.3); }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+  .badge-gray { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+  .badge-blue { background: rgba(99,102,241,0.15); color: var(--accent); border: 1px solid rgba(99,102,241,0.3); }
+  
+  /* SOURCE DOT */
+  .source-dot {
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%; margin-right: 4px; vertical-align: middle;
+  }
+
+  /* PAGINATION */
+  .pagination {
+    display: flex; align-items: center; gap: 8px; margin-top: 1rem;
+    justify-content: flex-end; flex-wrap: wrap;
+  }
+  .page-info { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); }
+  .page-btn {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 5px 10px; border-radius: 6px;
+    cursor: pointer; font-family: var(--mono); font-size: 0.75rem;
+    transition: all 0.2s;
+  }
+  .page-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .page-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* SUMMARY STATS */
+  .stats-bar {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem; margin-bottom: 1.5rem;
+  }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 1rem 1.2rem;
+    position: relative; overflow: hidden;
+    animation: fadeIn 0.4s ease;
+  }
+  .stat-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  }
+  .stat-card:nth-child(1)::before { background: var(--accent); }
+  .stat-card:nth-child(2)::before { background: var(--accent2); }
+  .stat-card:nth-child(3)::before { background: var(--accent3); }
+  .stat-card:nth-child(4)::before { background: var(--danger); }
+  .stat-value {
+    font-size: 1.6rem; font-weight: 800; line-height: 1;
+    margin-bottom: 4px;
+  }
+  .stat-name { font-size: 0.68rem; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
+
+  /* EMPTY STATE */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 5rem 2rem; text-align: center;
+  }
+  .empty-icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.4; }
+  .empty-title { font-size: 1rem; font-weight: 700; color: var(--muted); }
+  .empty-sub { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; font-family: var(--mono); }
+
+  /* EXPORT */
+  .export-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* RESPONSIVE */
+  @media (max-width: 768px) {
+    .main { grid-template-columns: 1fr; }
+    .sidebar { position: fixed; left: -300px; top: 60px; height: 100vh; z-index: 50; transition: left 0.3s; width: 280px; }
+    .sidebar.open { left: 0; box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
+    .header-stats { display: none; }
+  }
+
+  .loading { display: flex; align-items: center; gap: 8px; color: var(--muted); font-family: var(--mono); font-size: 0.8rem; padding: 2rem; }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .divider { height: 1px; background: var(--border); margin: 1rem 0; }
+  
+  select.filter-search option { background: var(--surface2); }
+  
+  .rows-per-page {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 0.75rem; color: var(--muted);
+  }
+  .rows-select {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 4px 8px; border-radius: 6px;
+    font-family: var(--mono); font-size: 0.75rem; outline: none;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    CSV Analyzer
+  </div>
+  <div class="header-stats">
+    <div class="stat-pill">File: <span id="hFileCount">0</span></div>
+    <div class="stat-pill">Total Baris: <span id="hRowCount">0</span></div>
+    <div class="stat-pill">Ditampilkan: <span id="hFilteredCount">0</span></div>
+  </div>
+</header>
+
+<div class="app">
+  <!-- UPLOAD -->
+  <div class="upload-section">
+    <div class="upload-zone" id="uploadZone">
+      <div class="upload-icon">📂</div>
+      <div class="upload-title">Upload File CSV</div>
+      <div class="upload-sub">Drag & drop satu atau banyak file .csv — atau klik untuk pilih</div>
+      <br>
+      <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+        ＋ Pilih File
+      </button>
+      <input type="file" id="fileInput" accept=".csv" multiple>
+    </div>
+    <div class="file-chips" id="fileChips"></div>
+  </div>
+
+  <div class="main" id="mainArea" style="display:none">
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-title">
+        Filter Data
+        <button class="btn btn-ghost" style="font-size:0.7rem;padding:3px 8px" onclick="clearAllFilters()">Reset</button>
+      </div>
+      <div id="filterGroups"></div>
+    </aside>
+
+    <!-- CONTENT -->
+    <main class="content">
+      <div class="stats-bar" id="statsBar"></div>
+      
+      <div class="content-header">
+        <div>
+          <div class="content-title">Tabel Data</div>
+          <div class="result-count" id="resultCount"></div>
+        </div>
+        <div class="search-bar">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="globalSearch" placeholder="Cari di semua kolom..." oninput="applyFilters()">
+        </div>
+        <div class="col-toggle-wrap">
+          <button class="btn btn-ghost" onclick="toggleColMenu()" id="colToggleBtn">⚙ Kolom</button>
+          <div class="col-toggle-menu" id="colMenu"></div>
+        </div>
+        <button class="btn btn-primary export-btn" onclick="exportCSV()">
+          ↓ Export CSV
+        </button>
+      </div>
+
+      <div class="table-wrap" id="tableWrap">
+        <div class="empty-state">
+          <div class="empty-icon">📊</div>
+          <div class="empty-title">Upload file CSV untuk mulai</div>
+          <div class="empty-sub">Mendukung banyak file sekaligus</div>
+        </div>
+      </div>
+
+      <div class="pagination" id="pagination"></div>
+      <div style="display:flex;align-items:center;justify-content:flex-end;margin-top:0.5rem">
+        <div class="rows-per-page">
+          Baris per halaman:
+          <select class="rows-select" id="rowsPerPage" onchange="changePageSize()">
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="250">250</option>
+          </select>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+// ─── STATE ───────────────────────────────────────────────
+const COLORS = ['#6366f1','#f59e0b','#10b981','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16'];
+let allData = [];         // [{...row, __source, __sourceColor}]
+let filteredData = [];
+let columns = [];
+let visibleColumns = new Set();
+let columnFilters = {};   // {colName: Set of selected values}
+let sortCol = null;
+let sortDir = 'asc';
+let currentPage = 1;
+let pageSize = 50;
+let sources = [];         // [{name, color, rows}]
+let colMenuOpen = false;
+
+// ─── FILE HANDLING ───────────────────────────────────────
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('drag-over');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e => handleFiles(e.target.files));
+uploadZone.addEventListener('click', e => {
+  if (e.target.tagName !== 'BUTTON') fileInput.click();
+});
+
+function handleFiles(files) {
+  [...files].forEach(file => {
+    if (!file.name.endsWith('.csv')) return;
+    if (sources.find(s => s.name === file.name)) return; // skip duplicate
+    const color = COLORS[sources.length % COLORS.length];
+    const reader = new FileReader();
+    reader.onload = e => {
+      const rows = parseCSV(e.target.result);
+      if (!rows.length) return;
+      const tagged = rows.map(r => ({ ...r, __source: file.name, __color: color }));
+      sources.push({ name: file.name, color, rows: rows.length });
+      allData = [...allData, ...tagged];
+      rebuildColumns();
+      renderFileChips();
+      applyFilters();
+      document.getElementById('mainArea').style.display = 'grid';
+    };
+    reader.readAsText(file);
+  });
+  fileInput.value = '';
+}
+
+function removeSource(name) {
+  sources = sources.filter(s => s.name !== name);
+  allData = allData.filter(r => r.__source !== name);
+  if (!sources.length) {
+    document.getElementById('mainArea').style.display = 'none';
+    document.getElementById('tableWrap').innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Upload file CSV untuk mulai</div></div>`;
+  }
+  rebuildColumns();
+  renderFileChips();
+  applyFilters();
+}
+
+function parseCSV(text) {
+  text = text.replace(/^\uFEFF/, ''); // BOM
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = parseCSVLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = parseCSVLine(line);
+    const obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+    return obj;
+  }).filter(r => Object.values(r).some(v => v));
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i+1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current); current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+// ─── COLUMN MANAGEMENT ──────────────────────────────────
+function rebuildColumns() {
+  const allCols = new Set();
+  allData.forEach(r => Object.keys(r).forEach(k => { if (!k.startsWith('__')) allCols.add(k); }));
+  columns = [...allCols];
+  // Keep existing visibility, add new cols as visible
+  columns.forEach(c => { if (!visibleColumns.has(c)) visibleColumns.add(c); });
+  // Clean up filters for removed cols
+  Object.keys(columnFilters).forEach(k => { if (!allCols.has(k)) delete columnFilters[k]; });
+  renderFilterSidebar();
+  renderColMenu();
+}
+
+// ─── FILE CHIPS ──────────────────────────────────────────
+function renderFileChips() {
+  document.getElementById('fileChips').innerHTML = sources.map(s => `
+    <div class="file-chip">
+      <div class="chip-color" style="background:${s.color}"></div>
+      <span class="chip-name">${s.name}</span>
+      <span class="chip-rows">${s.rows.toLocaleString()} baris</span>
+      <button class="chip-remove" onclick="removeSource('${s.name.replace(/'/g,"\\'")}')">×</button>
+    </div>
+  `).join('');
+  document.getElementById('hFileCount').textContent = sources.length;
+}
+
+// ─── FILTER SIDEBAR ──────────────────────────────────────
+function renderFilterSidebar() {
+  const filterCols = columns.filter(c => {
+    const vals = new Set(allData.map(r => r[c] || '').filter(v => v));
+    return vals.size > 0 && vals.size <= 50;
+  });
+
+  const html = filterCols.map(col => {
+    const valueCounts = {};
+    allData.forEach(r => {
+      const v = r[col] || ''; if (!v) return;
+      valueCounts[v] = (valueCounts[v] || 0) + 1;
+    });
+    const entries = Object.entries(valueCounts).sort((a,b) => b[1]-a[1]);
+    const selected = columnFilters[col] || new Set();
+    return `
+      <div class="filter-group">
+        <div class="filter-label">${col}</div>
+        <div class="filter-options" id="opts_${sanitizeId(col)}">
+          ${entries.map(([val, cnt]) => `
+            <label class="filter-option">
+              <input type="checkbox" value="${escHtml(val)}" ${selected.has(val)?'checked':''}
+                onchange="toggleFilter('${escAttr(col)}', this.value, this.checked)">
+              <span class="opt-label">${escHtml(val)}</span>
+              <span class="opt-count">${cnt}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }).join('<div class="divider"></div>');
+
+  document.getElementById('filterGroups').innerHTML = html || '<div style="color:var(--muted);font-size:0.8rem;text-align:center;padding:2rem">Upload CSV untuk melihat filter</div>';
+}
+
+function sanitizeId(str) { return str.replace(/[^a-zA-Z0-9]/g, '_'); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+
+function toggleFilter(col, val, checked) {
+  if (!columnFilters[col]) columnFilters[col] = new Set();
+  if (checked) columnFilters[col].add(val);
+  else columnFilters[col].delete(val);
+  if (!columnFilters[col].size) delete columnFilters[col];
+  applyFilters();
+}
+
+function clearAllFilters() {
+  columnFilters = {};
+  document.getElementById('globalSearch').value = '';
+  renderFilterSidebar();
+  applyFilters();
+}
+
+// ─── COLUMN TOGGLE MENU ──────────────────────────────────
+function renderColMenu() {
+  document.getElementById('colMenu').innerHTML = columns.map(col => `
+    <label class="col-toggle-item">
+      <input type="checkbox" ${visibleColumns.has(col)?'checked':''}
+        onchange="toggleCol('${escAttr(col)}', this.checked)">
+      ${escHtml(col)}
+    </label>
+  `).join('');
+}
+
+function toggleCol(col, show) {
+  if (show) visibleColumns.add(col);
+  else visibleColumns.delete(col);
+  renderTable();
+}
+
+function toggleColMenu() {
+  colMenuOpen = !colMenuOpen;
+  document.getElementById('colMenu').classList.toggle('open', colMenuOpen);
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.col-toggle-wrap')) {
+    colMenuOpen = false;
+    document.getElementById('colMenu').classList.remove('open');
+  }
+});
+
+// ─── FILTER & SORT ───────────────────────────────────────
+function applyFilters() {
+  const search = document.getElementById('globalSearch').value.toLowerCase().trim();
+  filteredData = allData.filter(row => {
+    // Column filters
+    for (const [col, vals] of Object.entries(columnFilters)) {
+      if (vals.size && !vals.has(row[col] || '')) return false;
+    }
+    // Global search
+    if (search) {
+      const str = Object.entries(row)
+        .filter(([k]) => !k.startsWith('__'))
+        .map(([,v]) => v).join(' ').toLowerCase();
+      if (!str.includes(search)) return false;
+    }
+    return true;
+  });
+
+  if (sortCol) {
+    filteredData.sort((a, b) => {
+      const av = a[sortCol] || '', bv = b[sortCol] || '';
+      const an = parseFloat(av), bn = parseFloat(bv);
+      if (!isNaN(an) && !isNaN(bn)) return sortDir === 'asc' ? an-bn : bn-an;
+      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+  }
+
+  currentPage = 1;
+  document.getElementById('hFilteredCount').textContent = filteredData.length.toLocaleString();
+  document.getElementById('hRowCount').textContent = allData.length.toLocaleString();
+  renderStatsBar();
+  renderTable();
+  renderPagination();
+}
+
+function setSort(col) {
+  if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  else { sortCol = col; sortDir = 'asc'; }
+  applyFilters();
+}
+
+// ─── STATS BAR ───────────────────────────────────────────
+function renderStatsBar() {
+  const stats = [
+    { label: 'Total Baris', value: filteredData.length.toLocaleString() },
+    { label: 'Sumber File', value: sources.length },
+    { label: 'Total Kolom', value: columns.length },
+  ];
+
+  // Smart stats based on column names
+  const kjpCol = columns.find(c => c.toLowerCase().includes('kjp'));
+  if (kjpCol) {
+    const yaCount = filteredData.filter(r => (r[kjpCol]||'').toLowerCase() === 'ya').length;
+    stats.push({ label: 'Status KJP Ya', value: yaCount.toLocaleString() });
+  }
+
+  document.getElementById('statsBar').innerHTML = stats.map(s => `
+    <div class="stat-card">
+      <div class="stat-value">${s.value}</div>
+      <div class="stat-name">${s.label}</div>
+    </div>
+  `).join('');
+}
+
+// ─── TABLE RENDER ────────────────────────────────────────
+function renderTable() {
+  const visColArr = columns.filter(c => visibleColumns.has(c));
+  const start = (currentPage - 1) * pageSize;
+  const pageData = filteredData.slice(start, start + pageSize);
+
+  document.getElementById('resultCount').textContent =
+    `Menampilkan ${Math.min(start+1, filteredData.length)}–${Math.min(start+pageSize, filteredData.length)} dari ${filteredData.length.toLocaleString()} baris`;
+
+  if (!filteredData.length) {
+    document.getElementById('tableWrap').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">Tidak ada data yang cocok</div>
+        <div class="empty-sub">Coba ubah filter atau kata pencarian</div>
+      </div>`;
+    return;
+  }
+
+  const headerHtml = `<tr>
+    <th style="width:36px"></th>
+    ${visColArr.map(col => `
+      <th onclick="setSort('${escAttr(col)}')" class="${sortCol===col?'sorted':''}">
+        ${escHtml(col)}
+        <span class="sort-icon">${sortCol===col ? (sortDir==='asc'?'↑':'↓') : '↕'}</span>
+      </th>
+    `).join('')}
+  </tr>`;
+
+  const bodyHtml = pageData.map((row, i) => `
+    <tr>
+      <td style="color:var(--muted);text-align:right;font-size:0.65rem">${start+i+1}</td>
+      ${visColArr.map(col => `<td>${renderCell(col, row[col] || '', row)}</td>`).join('')}
+    </tr>
+  `).join('');
+
+  document.getElementById('tableWrap').innerHTML = `
+    <table>
+      <thead>${headerHtml}</thead>
+      <tbody>${bodyHtml}</tbody>
+    </table>`;
+}
+
+function renderCell(col, val, row) {
+  if (!val) return `<span style="color:var(--muted)">—</span>`;
+  const lval = val.toLowerCase();
+  const lcol = col.toLowerCase();
+
+  // Source col
+  if (col === '__source') return `<span class="source-dot" style="background:${row.__color}"></span>${escHtml(val)}`;
+
+  // Boolean-ish fields
+  if (['ya','sudah','aktif','yes','true','1'].includes(lval)) return `<span class="badge badge-green">${escHtml(val)}</span>`;
+  if (['tidak','belum','tidak aktif','no','false','0'].includes(lval)) return `<span class="badge badge-gray">${escHtml(val)}</span>`;
+
+  // Kelas
+  if (lcol === 'kelas') return `<span class="badge badge-blue">${escHtml(val)}</span>`;
+
+  // Negara
+  if (lcol.includes('negara') && val) return `<span class="badge badge-yellow">${escHtml(val)}</span>`;
+
+  // Date/timestamp
+  if (lcol.includes('tanggal') || lcol.includes('timestamp')) {
+    try { const d = new Date(val); if (!isNaN(d)) return `<span style="color:var(--muted)">${d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})}</span>`; } catch(e){}
+  }
+
+  // Numbers
+  if (/^\d+$/.test(val) && val.length < 10) return `<span style="color:var(--accent2)">${val}</span>`;
+
+  return escHtml(val);
+}
+
+// ─── PAGINATION ──────────────────────────────────────────
+function renderPagination() {
+  const total = Math.ceil(filteredData.length / pageSize);
+  if (total <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
+  
+  let pages = [];
+  for (let i = 1; i <= total; i++) {
+    if (i === 1 || i === total || Math.abs(i - currentPage) <= 2) pages.push(i);
+    else if (pages[pages.length-1] !== '...') pages.push('...');
+  }
+  
+  document.getElementById('pagination').innerHTML = `
+    <button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>←</button>
+    ${pages.map(p => p==='...'
+      ? `<span style="color:var(--muted);font-family:var(--mono)">…</span>`
+      : `<button class="page-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`
+    ).join('')}
+    <button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===total?'disabled':''}>→</button>
+    <span class="page-info">Hal ${currentPage} / ${total}</span>
+  `;
+}
+
+function goPage(p) {
+  const total = Math.ceil(filteredData.length / pageSize);
+  if (p < 1 || p > total) return;
+  currentPage = p;
+  renderTable();
+  renderPagination();
+  document.getElementById('tableWrap').scrollTop = 0;
+}
+
+function changePageSize() {
+  pageSize = parseInt(document.getElementById('rowsPerPage').value);
+  applyFilters();
+}
+
+// ─── EXPORT ──────────────────────────────────────────────
+function exportCSV() {
+  const visColArr = columns.filter(c => visibleColumns.has(c));
+  const rows = [
+    visColArr.join(','),
+    ...filteredData.map(row => visColArr.map(c => `"${(row[c]||'').replace(/"/g,'""')}"`).join(','))
+  ];
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `export_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+</script>
+</body>
+</html>
