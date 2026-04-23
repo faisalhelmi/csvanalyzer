@@ -396,6 +396,7 @@
     font-family: var(--mono); font-size: 0.75rem; outline: none;
   }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -454,8 +455,8 @@
           <button class="btn btn-ghost" onclick="toggleColMenu()" id="colToggleBtn">⚙ Kolom</button>
           <div class="col-toggle-menu" id="colMenu"></div>
         </div>
-        <button class="btn btn-primary export-btn" onclick="exportCSV()">
-          ↓ Export CSV
+        <button class="btn btn-primary export-btn" onclick="exportExcel()">
+          ↓ Export Excel
         </button>
       </div>
 
@@ -859,18 +860,58 @@ function changePageSize() {
   applyFilters();
 }
 
-// ─── EXPORT ──────────────────────────────────────────────
-function exportCSV() {
+// ─── EXPORT EXCEL ────────────────────────────────────────
+function exportExcel() {
   const visColArr = columns.filter(c => visibleColumns.has(c));
-  const rows = [
-    visColArr.join(','),
-    ...filteredData.map(row => visColArr.map(c => `"${(row[c]||'').replace(/"/g,'""')}"`).join(','))
-  ];
-  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `export_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
+
+  // Build array of objects for SheetJS
+  const sheetData = filteredData.map(row => {
+    const obj = {};
+    visColArr.forEach(col => { obj[col] = row[col] || ''; });
+    return obj;
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(sheetData, { header: visColArr });
+
+  // Auto column width based on content
+  const colWidths = visColArr.map(col => {
+    const maxLen = Math.max(
+      col.length,
+      ...filteredData.slice(0, 200).map(r => String(r[col] || '').length)
+    );
+    return { wch: Math.min(maxLen + 2, 50) };
+  });
+  ws['!cols'] = colWidths;
+
+  // Style header row (bold + background)
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let C = range.s.c; C <= range.e.c; C++) {
+    const cellAddr = XLSX.utils.encode_cell({ r: 0, c: C });
+    if (!ws[cellAddr]) continue;
+    ws[cellAddr].s = {
+      font: { bold: true, color: { rgb: 'FFFFFF' } },
+      fill: { fgColor: { rgb: '6366F1' } },
+      alignment: { horizontal: 'center' }
+    };
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Data');
+
+  // If multiple sources, add a summary sheet
+  if (sources.length > 1) {
+    const summaryData = sources.map(s => ({
+      'Nama File': s.name,
+      'Jumlah Baris': s.rows,
+      'Warna': s.color
+    }));
+    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+    wsSummary['!cols'] = [{ wch: 40 }, { wch: 15 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Sumber File');
+  }
+
+  const filename = `export_${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
 }
 </script>
 </body>
