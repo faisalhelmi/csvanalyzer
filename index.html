@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CSV Analyzer — Data Dashboard</title>
+<title>CSV Analyzer Keberangkatan Luar Negeri — Data Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -395,6 +395,37 @@
     color: var(--text); padding: 4px 8px; border-radius: 6px;
     font-family: var(--mono); font-size: 0.75rem; outline: none;
   }
+
+  /* EDIT MODE */
+  .edit-mode td.editable { cursor: text; position: relative; }
+  .edit-mode td.editable:hover { background: rgba(99,102,241,0.1) !important; outline: 1px dashed var(--accent); outline-offset: -1px; }
+  .cell-input {
+    background: var(--bg); border: 1px solid var(--accent);
+    color: var(--text); font-family: var(--mono); font-size: 0.75rem;
+    padding: 4px 6px; border-radius: 4px; outline: none;
+    width: 100%; min-width: 80px; box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
+  }
+  .edit-mode-banner {
+    background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.3);
+    border-radius: 8px; padding: 6px 14px;
+    font-family: var(--mono); font-size: 0.75rem; color: var(--accent);
+    display: none; align-items: center; gap: 8px;
+  }
+  .edit-mode-banner.show { display: flex; }
+  .edit-mode-banner .dot { width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.5s infinite; }
+  .btn-delete-row {
+    background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 0.85rem;
+    transition: all 0.15s; line-height: 1;
+  }
+  .btn-delete-row:hover { color: var(--danger); background: rgba(239,68,68,0.1); }
+  .edit-mode .btn-delete-row { opacity: 1; }
+  .btn-delete-row { opacity: 0; transition: opacity 0.15s; }
+  tr:hover .btn-delete-row { opacity: 1; }
+  .changes-count {
+    background: var(--accent); color: white;
+    padding: 1px 7px; border-radius: 100px; font-size: 0.65rem; font-weight: 700;
+  }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
@@ -403,7 +434,7 @@
 <header>
   <div class="logo">
     <div class="logo-dot"></div>
-    CSV Analyzer
+    CSV Analyzer Keberangkatan Luar Negeri
   </div>
   <div class="header-stats">
     <div class="stat-pill">File: <span id="hFileCount">0</span></div>
@@ -441,6 +472,11 @@
     <!-- CONTENT -->
     <main class="content">
       <div class="stats-bar" id="statsBar"></div>
+      <div class="edit-mode-banner" id="editBanner">
+        <span class="dot"></span>
+        Mode Edit Aktif — klik sel untuk mengedit, klik di luar untuk simpan
+        <span id="changesLabel" style="margin-left:auto"></span>
+      </div>
       
       <div class="content-header">
         <div>
@@ -455,9 +491,17 @@
           <button class="btn btn-ghost" onclick="toggleColMenu()" id="colToggleBtn">⚙ Kolom</button>
           <div class="col-toggle-menu" id="colMenu"></div>
         </div>
-        <button class="btn btn-primary export-btn" onclick="exportExcel()">
-          ↓ Export Excel
-        </button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn btn-ghost" id="editModeBtn" onclick="toggleEditMode()">✏️ Edit</button>
+          <button class="btn btn-ghost" onclick="addRow()" id="addRowBtn" style="display:none">＋ Baris</button>
+          <div style="position:relative">
+            <button class="btn btn-primary export-btn" onclick="toggleExportMenu()">↓ Export ▾</button>
+            <div id="exportMenu" style="display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--surface2);border:1px solid var(--border);border-radius:10px;overflow:hidden;min-width:170px;z-index:50;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
+              <button onclick="exportExcel();toggleExportMenu()" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;background:none;border:none;color:var(--text);font-family:var(--sans);font-size:0.82rem;font-weight:600;cursor:pointer" onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background='none'">📊 Excel (.xlsx)</button>
+              <button onclick="exportCSV();toggleExportMenu()" style="display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;background:none;border:none;color:var(--text);font-family:var(--sans);font-size:0.82rem;font-weight:600;cursor:pointer" onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background='none'">📄 CSV (.csv)</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="table-wrap" id="tableWrap">
@@ -487,21 +531,25 @@
 <script>
 // ─── STATE ───────────────────────────────────────────────
 const COLORS = ['#6366f1','#f59e0b','#10b981','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16'];
-let allData = [];         // [{...row, __source, __sourceColor}]
+let allData = [];
 let filteredData = [];
 let columns = [];
 let visibleColumns = new Set();
-let columnFilters = {};   // {colName: Set of selected values}
+let columnFilters = {};
 let sortCol = null;
 let sortDir = 'asc';
 let currentPage = 1;
 let pageSize = 50;
-let sources = [];         // [{name, color, rows}]
+let sources = [];
 let colMenuOpen = false;
+let exportMenuOpen = false;
+let editMode = false;
+let editChanges = 0;
+let nextId = 0;
 
 // ─── FILE HANDLING ───────────────────────────────────────
 const uploadZone = document.getElementById('uploadZone');
-const fileInput = document.getElementById('fileInput');
+const fileInput  = document.getElementById('fileInput');
 
 uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
@@ -517,13 +565,13 @@ uploadZone.addEventListener('click', e => {
 function handleFiles(files) {
   [...files].forEach(file => {
     if (!file.name.endsWith('.csv')) return;
-    if (sources.find(s => s.name === file.name)) return; // skip duplicate
-    const color = COLORS[sources.length % COLORS.length];
+    if (sources.find(s => s.name === file.name)) return;
+    const color  = COLORS[sources.length % COLORS.length];
     const reader = new FileReader();
-    reader.onload = e => {
-      const rows = parseCSV(e.target.result);
+    reader.onload = ev => {
+      const rows   = parseCSV(ev.target.result);
       if (!rows.length) return;
-      const tagged = rows.map(r => ({ ...r, __source: file.name, __color: color }));
+      const tagged = rows.map(r => ({ ...r, __source: file.name, __color: color, __id: nextId++ }));
       sources.push({ name: file.name, color, rows: rows.length });
       allData = [...allData, ...tagged];
       rebuildColumns();
@@ -538,24 +586,22 @@ function handleFiles(files) {
 
 function removeSource(name) {
   sources = sources.filter(s => s.name !== name);
-  allData = allData.filter(r => r.__source !== name);
+  allData  = allData.filter(r => r.__source !== name);
   if (!sources.length) {
     document.getElementById('mainArea').style.display = 'none';
-    document.getElementById('tableWrap').innerHTML = `<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Upload file CSV untuk mulai</div></div>`;
+    document.getElementById('tableWrap').innerHTML = '<div class="empty-state"><div class="empty-icon">&#128202;</div><div class="empty-title">Upload file CSV untuk mulai</div></div>';
   }
-  rebuildColumns();
-  renderFileChips();
-  applyFilters();
+  rebuildColumns(); renderFileChips(); applyFilters();
 }
 
 function parseCSV(text) {
-  text = text.replace(/^\uFEFF/, ''); // BOM
+  text = text.replace(/^\uFEFF/, '');
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return [];
   const headers = parseCSVLine(lines[0]);
   return lines.slice(1).map(line => {
     const vals = parseCSVLine(line);
-    const obj = {};
+    const obj  = {};
     headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
     return obj;
   }).filter(r => Object.values(r).some(v => v));
@@ -563,8 +609,7 @@ function parseCSV(text) {
 
 function parseCSVLine(line) {
   const result = [];
-  let current = '';
-  let inQuotes = false;
+  let current = '', inQuotes = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (ch === '"') {
@@ -572,9 +617,7 @@ function parseCSVLine(line) {
       else inQuotes = !inQuotes;
     } else if (ch === ',' && !inQuotes) {
       result.push(current); current = '';
-    } else {
-      current += ch;
-    }
+    } else { current += ch; }
   }
   result.push(current);
   return result;
@@ -585,9 +628,7 @@ function rebuildColumns() {
   const allCols = new Set();
   allData.forEach(r => Object.keys(r).forEach(k => { if (!k.startsWith('__')) allCols.add(k); }));
   columns = [...allCols];
-  // Keep existing visibility, add new cols as visible
   columns.forEach(c => { if (!visibleColumns.has(c)) visibleColumns.add(c); });
-  // Clean up filters for removed cols
   Object.keys(columnFilters).forEach(k => { if (!allCols.has(k)) delete columnFilters[k]; });
   renderFilterSidebar();
   renderColMenu();
@@ -600,10 +641,10 @@ function renderFileChips() {
       <div class="chip-color" style="background:${s.color}"></div>
       <span class="chip-name">${s.name}</span>
       <span class="chip-rows">${s.rows.toLocaleString()} baris</span>
-      <button class="chip-remove" onclick="removeSource('${s.name.replace(/'/g,"\\'")}')">×</button>
+      <button class="chip-remove" onclick="removeSource('${s.name.replace(/'/g, "\\'")}')">&#215;</button>
     </div>
   `).join('');
-  document.getElementById('hFileCount').textContent = sources.length;
+  document.getElementById('hFileCount').textContent  = sources.length;
 }
 
 // ─── FILTER SIDEBAR ──────────────────────────────────────
@@ -612,19 +653,15 @@ function renderFilterSidebar() {
     const vals = new Set(allData.map(r => r[c] || '').filter(v => v));
     return vals.size > 0 && vals.size <= 50;
   });
-
   const html = filterCols.map(col => {
     const valueCounts = {};
-    allData.forEach(r => {
-      const v = r[col] || ''; if (!v) return;
-      valueCounts[v] = (valueCounts[v] || 0) + 1;
-    });
-    const entries = Object.entries(valueCounts).sort((a,b) => b[1]-a[1]);
+    allData.forEach(r => { const v = r[col] || ''; if (!v) return; valueCounts[v] = (valueCounts[v] || 0) + 1; });
+    const entries  = Object.entries(valueCounts).sort((a,b) => b[1]-a[1]);
     const selected = columnFilters[col] || new Set();
     return `
       <div class="filter-group">
         <div class="filter-label">${col}</div>
-        <div class="filter-options" id="opts_${sanitizeId(col)}">
+        <div class="filter-options">
           ${entries.map(([val, cnt]) => `
             <label class="filter-option">
               <input type="checkbox" value="${escHtml(val)}" ${selected.has(val)?'checked':''}
@@ -634,14 +671,11 @@ function renderFilterSidebar() {
             </label>
           `).join('')}
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('<div class="divider"></div>');
-
   document.getElementById('filterGroups').innerHTML = html || '<div style="color:var(--muted);font-size:0.8rem;text-align:center;padding:2rem">Upload CSV untuk melihat filter</div>';
 }
 
-function sanitizeId(str) { return str.replace(/[^a-zA-Z0-9]/g, '_'); }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escAttr(s) { return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
@@ -672,19 +706,28 @@ function renderColMenu() {
 }
 
 function toggleCol(col, show) {
-  if (show) visibleColumns.add(col);
-  else visibleColumns.delete(col);
+  if (show) visibleColumns.add(col); else visibleColumns.delete(col);
   renderTable();
 }
-
 function toggleColMenu() {
   colMenuOpen = !colMenuOpen;
   document.getElementById('colMenu').classList.toggle('open', colMenuOpen);
 }
+
+// ─── EXPORT MENU ─────────────────────────────────────────
+function toggleExportMenu() {
+  exportMenuOpen = !exportMenuOpen;
+  document.getElementById('exportMenu').style.display = exportMenuOpen ? 'block' : 'none';
+}
+
 document.addEventListener('click', e => {
   if (!e.target.closest('.col-toggle-wrap')) {
     colMenuOpen = false;
     document.getElementById('colMenu').classList.remove('open');
+  }
+  if (!e.target.closest('#exportMenu') && !e.target.closest('[onclick="toggleExportMenu()"]')) {
+    exportMenuOpen = false;
+    document.getElementById('exportMenu').style.display = 'none';
   }
 });
 
@@ -692,20 +735,15 @@ document.addEventListener('click', e => {
 function applyFilters() {
   const search = document.getElementById('globalSearch').value.toLowerCase().trim();
   filteredData = allData.filter(row => {
-    // Column filters
     for (const [col, vals] of Object.entries(columnFilters)) {
       if (vals.size && !vals.has(row[col] || '')) return false;
     }
-    // Global search
     if (search) {
-      const str = Object.entries(row)
-        .filter(([k]) => !k.startsWith('__'))
-        .map(([,v]) => v).join(' ').toLowerCase();
+      const str = Object.entries(row).filter(([k]) => !k.startsWith('__')).map(([,v]) => v).join(' ').toLowerCase();
       if (!str.includes(search)) return false;
     }
     return true;
   });
-
   if (sortCol) {
     filteredData.sort((a, b) => {
       const av = a[sortCol] || '', bv = b[sortCol] || '';
@@ -714,7 +752,6 @@ function applyFilters() {
       return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
     });
   }
-
   currentPage = 1;
   document.getElementById('hFilteredCount').textContent = filteredData.length.toLocaleString();
   document.getElementById('hRowCount').textContent = allData.length.toLocaleString();
@@ -724,6 +761,7 @@ function applyFilters() {
 }
 
 function setSort(col) {
+  if (editMode) return;
   if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
   else { sortCol = col; sortDir = 'asc'; }
   applyFilters();
@@ -732,95 +770,160 @@ function setSort(col) {
 // ─── STATS BAR ───────────────────────────────────────────
 function renderStatsBar() {
   const stats = [
-    { label: 'Total Baris', value: filteredData.length.toLocaleString() },
-    { label: 'Sumber File', value: sources.length },
-    { label: 'Total Kolom', value: columns.length },
+    { label: 'Total Baris',  value: filteredData.length.toLocaleString() },
+    { label: 'Sumber File',  value: sources.length },
+    { label: 'Total Kolom',  value: columns.length },
   ];
-
-  // Smart stats based on column names
   const kjpCol = columns.find(c => c.toLowerCase().includes('kjp'));
   if (kjpCol) {
     const yaCount = filteredData.filter(r => (r[kjpCol]||'').toLowerCase() === 'ya').length;
     stats.push({ label: 'Status KJP Ya', value: yaCount.toLocaleString() });
   }
-
   document.getElementById('statsBar').innerHTML = stats.map(s => `
-    <div class="stat-card">
-      <div class="stat-value">${s.value}</div>
-      <div class="stat-name">${s.label}</div>
-    </div>
+    <div class="stat-card"><div class="stat-value">${s.value}</div><div class="stat-name">${s.label}</div></div>
   `).join('');
+}
+
+// ─── EDIT MODE ───────────────────────────────────────────
+function toggleEditMode() {
+  editMode = !editMode;
+  editChanges = 0;
+  const btn    = document.getElementById('editModeBtn');
+  const banner = document.getElementById('editBanner');
+  const addBtn = document.getElementById('addRowBtn');
+  const wrap   = document.getElementById('tableWrap');
+  if (editMode) {
+    btn.innerHTML = '&#10003; Selesai Edit';
+    btn.style.cssText = 'background:rgba(99,102,241,0.2);border:1px solid var(--accent);color:var(--accent)';
+    banner.classList.add('show');
+    addBtn.style.display = 'inline-flex';
+    wrap.classList.add('edit-mode');
+  } else {
+    btn.innerHTML = '&#9998;&#65039; Edit';
+    btn.style.cssText = '';
+    banner.classList.remove('show');
+    addBtn.style.display = 'none';
+    wrap.classList.remove('edit-mode');
+    renderFilterSidebar();
+    applyFilters();
+  }
+  renderTable();
+}
+
+function startCellEdit(td, rowId, col) {
+  if (!editMode) return;
+  const row = allData.find(r => r.__id === rowId);
+  if (!row) return;
+  const current = row[col] || '';
+  td.innerHTML = '<input class="cell-input" value="' + escHtml(current) + '">';
+  const input = td.querySelector('input');
+  input.addEventListener('blur', () => commitEdit(input, rowId, col, td));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { input.value = current; input.blur(); }
+  });
+  input.focus(); input.select();
+}
+
+function commitEdit(input, rowId, col, td) {
+  const row = allData.find(r => r.__id === rowId);
+  if (!row) return;
+  const newVal = input.value;
+  if (newVal !== (row[col] || '')) {
+    row[col] = newVal;
+    editChanges++;
+    updateChangesLabel();
+  }
+  td.innerHTML = renderCell(col, newVal, row);
+  if (editMode) {
+    td.classList.add('editable');
+    td.onclick = () => startCellEdit(td, rowId, col);
+  }
+}
+
+function updateChangesLabel() {
+  const el = document.getElementById('changesLabel');
+  el.innerHTML = editChanges > 0 ? '<span class="changes-count">' + editChanges + ' perubahan</span>' : '';
+}
+
+function deleteRow(rowId) {
+  allData = allData.filter(r => r.__id !== rowId);
+  applyFilters();
+  renderFilterSidebar();
+}
+
+function addRow() {
+  const newRow = { __source: sources[0]?.name || 'manual', __color: sources[0]?.color || '#6366f1', __id: nextId++ };
+  columns.forEach(c => { newRow[c] = ''; });
+  allData.push(newRow);
+  applyFilters();
+  const totalPages = Math.ceil(filteredData.length / pageSize);
+  currentPage = totalPages || 1;
+  renderTable();
+  renderPagination();
 }
 
 // ─── TABLE RENDER ────────────────────────────────────────
 function renderTable() {
   const visColArr = columns.filter(c => visibleColumns.has(c));
-  const start = (currentPage - 1) * pageSize;
-  const pageData = filteredData.slice(start, start + pageSize);
+  const start     = (currentPage - 1) * pageSize;
+  const pageData  = filteredData.slice(start, start + pageSize);
 
   document.getElementById('resultCount').textContent =
-    `Menampilkan ${Math.min(start+1, filteredData.length)}–${Math.min(start+pageSize, filteredData.length)} dari ${filteredData.length.toLocaleString()} baris`;
+    'Menampilkan ' + Math.min(start+1, filteredData.length) + '\u2013' + Math.min(start+pageSize, filteredData.length) + ' dari ' + filteredData.length.toLocaleString() + ' baris';
 
   if (!filteredData.length) {
-    document.getElementById('tableWrap').innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">🔍</div>
-        <div class="empty-title">Tidak ada data yang cocok</div>
-        <div class="empty-sub">Coba ubah filter atau kata pencarian</div>
-      </div>`;
+    document.getElementById('tableWrap').innerHTML = '<div class="empty-state"><div class="empty-icon">&#128269;</div><div class="empty-title">Tidak ada data yang cocok</div><div class="empty-sub">Coba ubah filter atau kata pencarian</div></div>';
+    if (editMode) document.getElementById('tableWrap').classList.add('edit-mode');
     return;
   }
 
-  const headerHtml = `<tr>
-    <th style="width:36px"></th>
-    ${visColArr.map(col => `
-      <th onclick="setSort('${escAttr(col)}')" class="${sortCol===col?'sorted':''}">
-        ${escHtml(col)}
-        <span class="sort-icon">${sortCol===col ? (sortDir==='asc'?'↑':'↓') : '↕'}</span>
-      </th>
-    `).join('')}
-  </tr>`;
+  const headerHtml = '<tr><th style="width:36px"></th>' +
+    visColArr.map(col =>
+      '<th onclick="setSort(\'' + escAttr(col) + '\')" class="' + (sortCol===col?'sorted':'') + '">' +
+      escHtml(col) +
+      '<span class="sort-icon">' + (sortCol===col ? (sortDir==='asc'?'&#8593;':'&#8595;') : '&#8597;') + '</span></th>'
+    ).join('') +
+    (editMode ? '<th style="width:44px"></th>' : '') + '</tr>';
 
-  const bodyHtml = pageData.map((row, i) => `
-    <tr>
-      <td style="color:var(--muted);text-align:right;font-size:0.65rem">${start+i+1}</td>
-      ${visColArr.map(col => `<td>${renderCell(col, row[col] || '', row)}</td>`).join('')}
-    </tr>
-  `).join('');
+  const bodyHtml = pageData.map((row, i) => {
+    const cells = visColArr.map(col => {
+      const content = renderCell(col, row[col] || '', row);
+      if (editMode) {
+        return '<td class="editable" data-rowid="' + row.__id + '" data-col="' + escAttr(col) + '">' + content + '</td>';
+      }
+      return '<td>' + content + '</td>';
+    }).join('');
+    const delBtn = editMode ? '<td><button class="btn-delete-row" onclick="deleteRow(' + row.__id + ')" title="Hapus baris">&#128465;</button></td>' : '';
+    return '<tr data-id="' + row.__id + '"><td style="color:var(--muted);text-align:right;font-size:0.65rem">' + (start+i+1) + '</td>' + cells + delBtn + '</tr>';
+  }).join('');
 
-  document.getElementById('tableWrap').innerHTML = `
-    <table>
-      <thead>${headerHtml}</thead>
-      <tbody>${bodyHtml}</tbody>
-    </table>`;
+  const wrap = document.getElementById('tableWrap');
+  wrap.innerHTML = '<table><thead>' + headerHtml + '</thead><tbody>' + bodyHtml + '</tbody></table>';
+  if (editMode) {
+    wrap.classList.add('edit-mode');
+    wrap.querySelectorAll('td.editable').forEach(td => {
+      const rowId = parseInt(td.dataset.rowid);
+      const col   = td.dataset.col;
+      td.onclick = () => startCellEdit(td, rowId, col);
+    });
+  } else {
+    wrap.classList.remove('edit-mode');
+  }
 }
 
 function renderCell(col, val, row) {
-  if (!val) return `<span style="color:var(--muted)">—</span>`;
+  if (!val) return '<span style="color:var(--muted)">&#8212;</span>';
   const lval = val.toLowerCase();
   const lcol = col.toLowerCase();
-
-  // Source col
-  if (col === '__source') return `<span class="source-dot" style="background:${row.__color}"></span>${escHtml(val)}`;
-
-  // Boolean-ish fields
-  if (['ya','sudah','aktif','yes','true','1'].includes(lval)) return `<span class="badge badge-green">${escHtml(val)}</span>`;
-  if (['tidak','belum','tidak aktif','no','false','0'].includes(lval)) return `<span class="badge badge-gray">${escHtml(val)}</span>`;
-
-  // Kelas
-  if (lcol === 'kelas') return `<span class="badge badge-blue">${escHtml(val)}</span>`;
-
-  // Negara
-  if (lcol.includes('negara') && val) return `<span class="badge badge-yellow">${escHtml(val)}</span>`;
-
-  // Date/timestamp
+  if (['ya','sudah','aktif','yes','true','1'].includes(lval)) return '<span class="badge badge-green">' + escHtml(val) + '</span>';
+  if (['tidak','belum','tidak aktif','no','false','0'].includes(lval)) return '<span class="badge badge-gray">' + escHtml(val) + '</span>';
+  if (lcol === 'kelas') return '<span class="badge badge-blue">' + escHtml(val) + '</span>';
+  if (lcol.includes('negara') && val) return '<span class="badge badge-yellow">' + escHtml(val) + '</span>';
   if (lcol.includes('tanggal') || lcol.includes('timestamp')) {
-    try { const d = new Date(val); if (!isNaN(d)) return `<span style="color:var(--muted)">${d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})}</span>`; } catch(e){}
+    try { const d = new Date(val); if (!isNaN(d)) return '<span style="color:var(--muted)">' + d.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}) + '</span>'; } catch(e){}
   }
-
-  // Numbers
-  if (/^\d+$/.test(val) && val.length < 10) return `<span style="color:var(--accent2)">${val}</span>`;
-
+  if (/^\d+$/.test(val) && val.length < 10) return '<span style="color:var(--accent2)">' + val + '</span>';
   return escHtml(val);
 }
 
@@ -828,30 +931,25 @@ function renderCell(col, val, row) {
 function renderPagination() {
   const total = Math.ceil(filteredData.length / pageSize);
   if (total <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
-  
   let pages = [];
   for (let i = 1; i <= total; i++) {
     if (i === 1 || i === total || Math.abs(i - currentPage) <= 2) pages.push(i);
     else if (pages[pages.length-1] !== '...') pages.push('...');
   }
-  
-  document.getElementById('pagination').innerHTML = `
-    <button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>←</button>
-    ${pages.map(p => p==='...'
-      ? `<span style="color:var(--muted);font-family:var(--mono)">…</span>`
-      : `<button class="page-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`
-    ).join('')}
-    <button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===total?'disabled':''}>→</button>
-    <span class="page-info">Hal ${currentPage} / ${total}</span>
-  `;
+  document.getElementById('pagination').innerHTML =
+    '<button class="page-btn" onclick="goPage(' + (currentPage-1) + ')" ' + (currentPage===1?'disabled':'') + '>&#8592;</button>' +
+    pages.map(p => p==='...'
+      ? '<span style="color:var(--muted);font-family:var(--mono)">&#8230;</span>'
+      : '<button class="page-btn ' + (p===currentPage?'active':'') + '" onclick="goPage(' + p + ')">' + p + '</button>'
+    ).join('') +
+    '<button class="page-btn" onclick="goPage(' + (currentPage+1) + ')" ' + (currentPage===total?'disabled':'') + '>&#8594;</button>' +
+    '<span class="page-info">Hal ' + currentPage + ' / ' + total + '</span>';
 }
 
 function goPage(p) {
   const total = Math.ceil(filteredData.length / pageSize);
   if (p < 1 || p > total) return;
-  currentPage = p;
-  renderTable();
-  renderPagination();
+  currentPage = p; renderTable(); renderPagination();
   document.getElementById('tableWrap').scrollTop = 0;
 }
 
@@ -863,55 +961,45 @@ function changePageSize() {
 // ─── EXPORT EXCEL ────────────────────────────────────────
 function exportExcel() {
   const visColArr = columns.filter(c => visibleColumns.has(c));
-
-  // Build array of objects for SheetJS
   const sheetData = filteredData.map(row => {
     const obj = {};
     visColArr.forEach(col => { obj[col] = row[col] || ''; });
     return obj;
   });
-
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(sheetData, { header: visColArr });
-
-  // Auto column width based on content
   const colWidths = visColArr.map(col => {
-    const maxLen = Math.max(
-      col.length,
-      ...filteredData.slice(0, 200).map(r => String(r[col] || '').length)
-    );
+    const maxLen = Math.max(col.length, ...filteredData.slice(0,200).map(r => String(r[col]||'').length));
     return { wch: Math.min(maxLen + 2, 50) };
   });
   ws['!cols'] = colWidths;
-
-  // Style header row (bold + background)
   const range = XLSX.utils.decode_range(ws['!ref']);
   for (let C = range.s.c; C <= range.e.c; C++) {
-    const cellAddr = XLSX.utils.encode_cell({ r: 0, c: C });
-    if (!ws[cellAddr]) continue;
-    ws[cellAddr].s = {
-      font: { bold: true, color: { rgb: 'FFFFFF' } },
-      fill: { fgColor: { rgb: '6366F1' } },
-      alignment: { horizontal: 'center' }
-    };
+    const addr = XLSX.utils.encode_cell({ r: 0, c: C });
+    if (!ws[addr]) continue;
+    ws[addr].s = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '6366F1' } }, alignment: { horizontal: 'center' } };
   }
-
   XLSX.utils.book_append_sheet(wb, ws, 'Data');
-
-  // If multiple sources, add a summary sheet
   if (sources.length > 1) {
-    const summaryData = sources.map(s => ({
-      'Nama File': s.name,
-      'Jumlah Baris': s.rows,
-      'Warna': s.color
-    }));
-    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-    wsSummary['!cols'] = [{ wch: 40 }, { wch: 15 }, { wch: 12 }];
+    const wsSummary = XLSX.utils.json_to_sheet(sources.map(s => ({ 'Nama File': s.name, 'Jumlah Baris': s.rows })));
+    wsSummary['!cols'] = [{ wch: 40 }, { wch: 15 }];
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Sumber File');
   }
+  XLSX.writeFile(wb, 'export_' + new Date().toISOString().slice(0,10) + '.xlsx');
+}
 
-  const filename = `export_${new Date().toISOString().slice(0,10)}.xlsx`;
-  XLSX.writeFile(wb, filename);
+// ─── EXPORT CSV ──────────────────────────────────────────
+function exportCSV() {
+  const visColArr = columns.filter(c => visibleColumns.has(c));
+  const rows = [
+    visColArr.map(c => '"' + c.replace(/"/g,'""') + '"').join(','),
+    ...filteredData.map(row => visColArr.map(c => '"' + (row[c]||'').replace(/"/g,'""') + '"').join(','))
+  ];
+  const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'export_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
 }
 </script>
 </body>
